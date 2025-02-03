@@ -68,6 +68,10 @@ expressApp.post("/liveStream/createYouTubeStream", (req, res) => {
   liveStreamService.createYouTubeStream(req, res);
 });
 
+expressApp.post("/liveStream/endYouTubeBroadcast", (req, res) => {
+  liveStreamService.endYouTubeBroadcast(req, res);
+});
+
 expressApp.get("/liveStream/getYouTubeChannel", (req, res) => {
   liveStreamService.getYouTubeChannel(req, res);
 });

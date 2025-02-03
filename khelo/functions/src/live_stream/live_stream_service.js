@@ -68,11 +68,11 @@ class LiveStreamService {
           scheduledStartTime: new Date(data.scheduledStartTime).toISOString(),
         },
         status: {
-          privacyStatus: "public",
+          privacyStatus: data.privacyStatus || "public",
           selfDeclaredMadeForKids: false,
         },
         contentDetails: {
-          enableContentEncryption: false, // TODO: Set to true if you need encryption
+          enableContentEncryption: true,
           enableDvr: true,
           enableMonitorStream: true,
           recordFromStart: true,
@@ -125,6 +125,69 @@ class LiveStreamService {
       return res.status(200).send(streamInfo);
     } catch (error) {
       console.error(error);
+      return res.status(400).send(error);
+    }
+  }
+
+  async endYouTubeBroadcast(req, res) {
+    try {
+      const userId = req.headers["auth-uid"];
+      if (!userId) {
+        console.error("AuthService: unauthorized request");
+        return res.status(400).send("unauthorized");
+      }
+
+      const broadcastId = req.body.broadcastId;
+      if (!broadcastId) {
+        console.error("Broadcast ID is required.");
+        return res.status(400).send("Broadcast ID is required.");
+      }
+
+      const userDoc = await this.userRepository.getUser(userId);
+      if (!userDoc) {
+        console.error("User not found");
+        return res.status(404).send("User not found");
+      }
+
+      const refreshToken = userDoc.google_refresh_token;
+      if (!refreshToken) {
+        console.error("No refresh token available for this user.");
+        return res.status(400).send("No refresh token available.");
+      }
+
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.WEB_CLIENT_ID,
+        process.env.WEB_CLIENT_SECRET,
+        process.env.REDIRECT_URL,
+      );
+
+      oauth2Client.setCredentials({
+        refresh_token: refreshToken,
+      });
+
+      // Refresh access token
+      const {credentials} = await oauth2Client.refreshAccessToken();
+      oauth2Client.setCredentials(credentials);
+
+      const youtube = google.youtube({
+        version: "v3",
+        auth: oauth2Client,
+      });
+
+      // Transition the broadcast to "complete"
+      const response = await youtube.liveBroadcasts.transition({
+        id: broadcastId,
+        broadcastStatus: "complete",
+        part: "status",
+      });
+
+      return res.status(200).send({
+        message: "Broadcast ended successfully.",
+        broadcastId: response.data.id,
+        status: response.data.status,
+      });
+    } catch (error) {
+      console.error("Error ending broadcast:", error);
       return res.status(400).send(error);
     }
   }

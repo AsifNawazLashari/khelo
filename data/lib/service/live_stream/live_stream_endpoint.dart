@@ -8,6 +8,7 @@ class CreateLiveStreamEndPoint extends Endpoint {
   final DateTime scheduledStartTime;
   final YouTubeResolution resolution;
   final MediumOption option;
+  final PrivacyStatus? privacyStatus;
 
   CreateLiveStreamEndPoint({
     required this.name,
@@ -16,6 +17,7 @@ class CreateLiveStreamEndPoint extends Endpoint {
     required this.scheduledStartTime,
     required this.resolution,
     required this.option,
+    this.privacyStatus,
   });
 
   @override
@@ -32,6 +34,7 @@ class CreateLiveStreamEndPoint extends Endpoint {
         "scheduledStartTime": scheduledStartTime.toIso8601String(),
         "resolution": resolution.stringResolution,
         "option": option.name,
+        "privacyStatus": privacyStatus?.name,
       };
 }
 
@@ -41,6 +44,23 @@ class GetYTChannelEndPoint extends Endpoint {
 
   @override
   HttpMethod get method => HttpMethod.get;
+}
+
+class EndYTBroadcastEndPoint extends Endpoint {
+  final String broadcastId;
+
+  EndYTBroadcastEndPoint({
+    required this.broadcastId,
+  });
+
+  @override
+  String get path => 'liveStream/endYouTubeBroadcast';
+
+  @override
+  HttpMethod get method => HttpMethod.get;
+
+  @override
+  dynamic get data => {"broadcastId": broadcastId};
 }
 
 enum YouTubeResolution {

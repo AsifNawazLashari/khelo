@@ -17,11 +17,13 @@ final _privateConstructorUsedError = UnsupportedError(
 /// @nodoc
 mixin _$StreamCameraViewState {
   Object? get error => throw _privateConstructorUsedError;
+  Object? get actionError => throw _privateConstructorUsedError;
   LiveStreamModel? get stream => throw _privateConstructorUsedError;
   RtmpConnection? get connection => throw _privateConstructorUsedError;
   RtmpStream? get rtmpStream => throw _privateConstructorUsedError;
   CameraPosition get currentPosition => throw _privateConstructorUsedError;
   bool get isLoading => throw _privateConstructorUsedError;
+  bool get isPop => throw _privateConstructorUsedError;
   bool get isAudioEnable => throw _privateConstructorUsedError;
 
   /// Create a copy of StreamCameraViewState
@@ -39,11 +41,13 @@ abstract class $StreamCameraViewStateCopyWith<$Res> {
   @useResult
   $Res call(
       {Object? error,
+      Object? actionError,
       LiveStreamModel? stream,
       RtmpConnection? connection,
       RtmpStream? rtmpStream,
       CameraPosition currentPosition,
       bool isLoading,
+      bool isPop,
       bool isAudioEnable});
 
   $LiveStreamModelCopyWith<$Res>? get stream;
@@ -66,15 +70,18 @@ class _$StreamCameraViewStateCopyWithImpl<$Res,
   @override
   $Res call({
     Object? error = freezed,
+    Object? actionError = freezed,
     Object? stream = freezed,
     Object? connection = freezed,
     Object? rtmpStream = freezed,
     Object? currentPosition = null,
     Object? isLoading = null,
+    Object? isPop = null,
     Object? isAudioEnable = null,
   }) {
     return _then(_value.copyWith(
       error: freezed == error ? _value.error : error,
+      actionError: freezed == actionError ? _value.actionError : actionError,
       stream: freezed == stream
           ? _value.stream
           : stream // ignore: cast_nullable_to_non_nullable
@@ -94,6 +101,10 @@ class _$StreamCameraViewStateCopyWithImpl<$Res,
       isLoading: null == isLoading
           ? _value.isLoading
           : isLoading // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isPop: null == isPop
+          ? _value.isPop
+          : isPop // ignore: cast_nullable_to_non_nullable
               as bool,
       isAudioEnable: null == isAudioEnable
           ? _value.isAudioEnable
@@ -128,11 +139,13 @@ abstract class _$$StreamCameraViewStateImplCopyWith<$Res>
   @useResult
   $Res call(
       {Object? error,
+      Object? actionError,
       LiveStreamModel? stream,
       RtmpConnection? connection,
       RtmpStream? rtmpStream,
       CameraPosition currentPosition,
       bool isLoading,
+      bool isPop,
       bool isAudioEnable});
 
   @override
@@ -154,15 +167,18 @@ class __$$StreamCameraViewStateImplCopyWithImpl<$Res>
   @override
   $Res call({
     Object? error = freezed,
+    Object? actionError = freezed,
     Object? stream = freezed,
     Object? connection = freezed,
     Object? rtmpStream = freezed,
     Object? currentPosition = null,
     Object? isLoading = null,
+    Object? isPop = null,
     Object? isAudioEnable = null,
   }) {
     return _then(_$StreamCameraViewStateImpl(
       error: freezed == error ? _value.error : error,
+      actionError: freezed == actionError ? _value.actionError : actionError,
       stream: freezed == stream
           ? _value.stream
           : stream // ignore: cast_nullable_to_non_nullable
@@ -183,6 +199,10 @@ class __$$StreamCameraViewStateImplCopyWithImpl<$Res>
           ? _value.isLoading
           : isLoading // ignore: cast_nullable_to_non_nullable
               as bool,
+      isPop: null == isPop
+          ? _value.isPop
+          : isPop // ignore: cast_nullable_to_non_nullable
+              as bool,
       isAudioEnable: null == isAudioEnable
           ? _value.isAudioEnable
           : isAudioEnable // ignore: cast_nullable_to_non_nullable
@@ -196,15 +216,19 @@ class __$$StreamCameraViewStateImplCopyWithImpl<$Res>
 class _$StreamCameraViewStateImpl implements _StreamCameraViewState {
   const _$StreamCameraViewStateImpl(
       {this.error,
+      this.actionError,
       this.stream,
       this.connection,
       this.rtmpStream,
-      this.currentPosition = CameraPosition.front,
+      this.currentPosition = CameraPosition.back,
       this.isLoading = false,
+      this.isPop = false,
       this.isAudioEnable = false});
 
   @override
   final Object? error;
+  @override
+  final Object? actionError;
   @override
   final LiveStreamModel? stream;
   @override
@@ -219,11 +243,14 @@ class _$StreamCameraViewStateImpl implements _StreamCameraViewState {
   final bool isLoading;
   @override
   @JsonKey()
+  final bool isPop;
+  @override
+  @JsonKey()
   final bool isAudioEnable;
 
   @override
   String toString() {
-    return 'StreamCameraViewState(error: $error, stream: $stream, connection: $connection, rtmpStream: $rtmpStream, currentPosition: $currentPosition, isLoading: $isLoading, isAudioEnable: $isAudioEnable)';
+    return 'StreamCameraViewState(error: $error, actionError: $actionError, stream: $stream, connection: $connection, rtmpStream: $rtmpStream, currentPosition: $currentPosition, isLoading: $isLoading, isPop: $isPop, isAudioEnable: $isAudioEnable)';
   }
 
   @override
@@ -232,6 +259,8 @@ class _$StreamCameraViewStateImpl implements _StreamCameraViewState {
         (other.runtimeType == runtimeType &&
             other is _$StreamCameraViewStateImpl &&
             const DeepCollectionEquality().equals(other.error, error) &&
+            const DeepCollectionEquality()
+                .equals(other.actionError, actionError) &&
             (identical(other.stream, stream) || other.stream == stream) &&
             (identical(other.connection, connection) ||
                 other.connection == connection) &&
@@ -241,6 +270,7 @@ class _$StreamCameraViewStateImpl implements _StreamCameraViewState {
                 other.currentPosition == currentPosition) &&
             (identical(other.isLoading, isLoading) ||
                 other.isLoading == isLoading) &&
+            (identical(other.isPop, isPop) || other.isPop == isPop) &&
             (identical(other.isAudioEnable, isAudioEnable) ||
                 other.isAudioEnable == isAudioEnable));
   }
@@ -249,11 +279,13 @@ class _$StreamCameraViewStateImpl implements _StreamCameraViewState {
   int get hashCode => Object.hash(
       runtimeType,
       const DeepCollectionEquality().hash(error),
+      const DeepCollectionEquality().hash(actionError),
       stream,
       connection,
       rtmpStream,
       currentPosition,
       isLoading,
+      isPop,
       isAudioEnable);
 
   /// Create a copy of StreamCameraViewState
@@ -269,15 +301,19 @@ class _$StreamCameraViewStateImpl implements _StreamCameraViewState {
 abstract class _StreamCameraViewState implements StreamCameraViewState {
   const factory _StreamCameraViewState(
       {final Object? error,
+      final Object? actionError,
       final LiveStreamModel? stream,
       final RtmpConnection? connection,
       final RtmpStream? rtmpStream,
       final CameraPosition currentPosition,
       final bool isLoading,
+      final bool isPop,
       final bool isAudioEnable}) = _$StreamCameraViewStateImpl;
 
   @override
   Object? get error;
+  @override
+  Object? get actionError;
   @override
   LiveStreamModel? get stream;
   @override
@@ -288,6 +324,8 @@ abstract class _StreamCameraViewState implements StreamCameraViewState {
   CameraPosition get currentPosition;
   @override
   bool get isLoading;
+  @override
+  bool get isPop;
   @override
   bool get isAudioEnable;
 

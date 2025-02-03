@@ -140,6 +140,7 @@ class AddStreamInfoViewNotifier extends StateNotifier<AddStreamInfoViewState> {
         channelId: state.channelId,
         resolution: resolution,
         scheduledStartTime: matchStartTime,
+        privacyStatus: PrivacyStatus.public,
       ));
       state = state.copyWith(
         stream: stream,

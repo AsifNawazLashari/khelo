@@ -1,6 +1,7 @@
 import 'package:data/api/live_stream/live_stream_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:haishin_kit/stream_view_texture.dart';
 import 'package:khelo/components/app_page.dart';
 import 'package:khelo/components/error_screen.dart';
@@ -9,6 +10,7 @@ import 'package:style/animations/on_tap_scale.dart';
 import 'package:style/extensions/context_extensions.dart';
 import 'package:style/text/app_text_style.dart';
 
+import '../../../../../components/error_snackbar.dart';
 import '../../../../../domain/extensions/widget_extension.dart';
 
 class StreamCameraScreen extends ConsumerStatefulWidget {
@@ -34,9 +36,19 @@ class _StreamCameraScreenState extends ConsumerState<StreamCameraScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(streamCameraStateProvider);
 
-    return AppPage(
-      body: Builder(
-        builder: (context) => _body(context, state),
+    _observeIsPop(context, ref);
+    _observeActionError(context, ref);
+
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        if (!state.isPop && state.stream?.status == LiveStreamStatus.live) {
+          notifier.updateStreamingStatus(LiveStreamStatus.paused);
+        }
+      },
+      child: AppPage(
+        body: Builder(
+          builder: (context) => _body(context, state),
+        ),
       ),
     );
   }
@@ -174,5 +186,23 @@ class _StreamCameraScreenState extends ConsumerState<StreamCameraScreen> {
         ),
       ),
     );
+  }
+
+  void _observeIsPop(BuildContext context, WidgetRef ref) {
+    ref.listen(streamCameraStateProvider.select((value) => value.isPop),
+        (previous, next) {
+      if (next) {
+        context.pop();
+      }
+    });
+  }
+
+  void _observeActionError(BuildContext context, WidgetRef ref) {
+    ref.listen(streamCameraStateProvider.select((value) => value.actionError),
+        (previous, next) {
+      if (next != null) {
+        showErrorSnackBar(context: context, error: next);
+      }
+    });
   }
 }

@@ -1,5 +1,6 @@
 import 'package:audio_session/audio_session.dart';
 import 'package:data/api/live_stream/live_stream_model.dart';
+import 'package:data/errors/app_error.dart';
 import 'package:data/service/live_stream/live_stream_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,22 +44,44 @@ class StreamCameraViewNotifier extends StateNotifier<StreamCameraViewState> {
       switch (status) {
         case LiveStreamStatus.live:
           state.connection?.connect("${state.stream!.server_url}/");
-          await state.rtmpStream?.setHasVideo(true);
         case LiveStreamStatus.paused:
-          await state.rtmpStream?.setHasVideo(false);
-        case LiveStreamStatus.completed:
-          await state.rtmpStream?.setHasVideo(false);
-          await state.rtmpStream?.close();
           state.connection?.close();
+        case LiveStreamStatus.completed:
+          state.connection?.close();
+          await _detachAudioAndVideo();
+          await state.rtmpStream?.close();
+          await endYTBroadcast();
         default:
           break;
       }
 
       state = state.copyWith(stream: state.stream?.copyWith(status: status));
     } catch (e) {
+      state = state.copyWith(actionError: e);
       debugPrint(
           "StreamCameraViewNotifier: error while updating streaming status -> $e");
     }
+  }
+
+  Future<void> endYTBroadcast() async {
+    if (state.stream == null) return;
+    try {
+      await _liveStreamService.endYTBroadcast(state.stream!.broadcast_id);
+      state = state.copyWith(isPop: true);
+    } catch (e) {
+      state = state.copyWith(actionError: e);
+      debugPrint(
+          "StreamCameraViewNotifier: error while end yt broadcast -> $e");
+    }
+  }
+
+  Future<void> _detachAudioAndVideo() async {
+    if (state.rtmpStream == null) return;
+
+    await Future.wait([
+      state.rtmpStream!.attachAudio(null),
+      state.rtmpStream!.attachVideo(null),
+    ]);
   }
 
   Future<void> requestPermissions() async {
@@ -107,33 +130,39 @@ class StreamCameraViewNotifier extends StateNotifier<StreamCameraViewState> {
       );
       await stream.attachAudio(AudioSource());
       await stream.attachVideo(VideoSource(position: state.currentPosition));
-      await stream.setHasAudio(state.isAudioEnable);
-      await stream.setHasVideo(state.stream?.status == LiveStreamStatus.live);
 
       state = state.copyWith(
         connection: connection,
         rtmpStream: stream,
         isLoading: false,
       );
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint(
           "StreamCameraViewNotifier: error while init platform state -> $e");
-      state = state.copyWith(error: e, isLoading: false);
+      state =
+          state.copyWith(error: AppError.fromError(e, stack), isLoading: false);
     }
   }
 
-  void switchCamera() {
+  Future<void> switchCamera() async {
     state = state.copyWith(
         currentPosition: state.currentPosition == CameraPosition.front
             ? CameraPosition.back
             : CameraPosition.front);
 
-    state.rtmpStream?.attachVideo(VideoSource(position: state.currentPosition));
+    await state.rtmpStream
+        ?.attachVideo(VideoSource(position: state.currentPosition));
   }
 
   Future<void> toggleMuteButton() async {
     final hasAudio = state.isAudioEnable;
-    state.rtmpStream?.setHasAudio(!hasAudio);
+    await state.rtmpStream?.setHasAudio(!hasAudio);
+
+    // if (hasAudio) {
+    //   await state.rtmpStream?.attachAudio(null);
+    // } else {
+    //   await state.rtmpStream?.attachAudio(AudioSource());
+    // }
     state = state.copyWith(isAudioEnable: !hasAudio);
   }
 
@@ -149,11 +178,13 @@ class StreamCameraViewNotifier extends StateNotifier<StreamCameraViewState> {
 class StreamCameraViewState with _$StreamCameraViewState {
   const factory StreamCameraViewState({
     Object? error,
+    Object? actionError,
     LiveStreamModel? stream,
     RtmpConnection? connection,
     RtmpStream? rtmpStream,
-    @Default(CameraPosition.front) CameraPosition currentPosition,
+    @Default(CameraPosition.back) CameraPosition currentPosition,
     @Default(false) bool isLoading,
+    @Default(false) bool isPop,
     @Default(false) bool isAudioEnable,
   }) = _StreamCameraViewState;
 }

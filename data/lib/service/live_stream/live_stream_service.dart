@@ -83,4 +83,12 @@ class LiveStreamService {
       throw AppError.fromError(error, stack);
     }
   }
+
+  Future<void> endYTBroadcast(String broadcastId) async {
+    try {
+      await client.req(EndYTBroadcastEndPoint(broadcastId: broadcastId));
+    } catch (e, stack) {
+      throw AppError.fromError(e, stack);
+    }
+  }
 }
