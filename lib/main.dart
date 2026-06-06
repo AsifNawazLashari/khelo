@@ -468,7 +468,15 @@ class _BrowserManagerScreenState extends State<BrowserManagerScreen> {
   ''';
 
   @override
-  void initState() { super.initState(); _addTab(); }
+  void initState() {
+    super.initState();
+    _addTab();
+    if (!RemoteConfig.isLoaded) {
+      RemoteConfig.fetch().then((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
 
   @override
   void dispose() { _addressCtrl.dispose(); _addressFocus.dispose(); super.dispose(); }
