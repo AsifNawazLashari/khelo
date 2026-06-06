@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -97,15 +96,53 @@ class RemoteConfig {
     _QuickLink('ChatGPT','https://chat.openai.com',    Icons.smart_toy_rounded,  const Color(0xFF10A37F)),
   ];
 
+  // Gist API endpoint — returns current raw_url with commit hash embedded,
+  // bypassing GitHub CDN cache. Config updates are instant on every launch.
+  static const String _kGistApiUrl =
+      'https://api.github.com/gists/a1c26df8253223f554e2f78de57cd9d1';
+
   static Future<void> fetch() async {
     try {
+      // Step 1: Gist API → get commit-pinned raw_url (never cached by CDN)
+      final apiRes = await http.get(
+        Uri.parse(_kGistApiUrl),
+        headers: {
+          'Accept':        'application/vnd.github+json',
+          'Cache-Control': 'no-cache, no-store',
+          'Pragma':        'no-cache',
+        },
+      ).timeout(const Duration(seconds: 8));
+
+      if (apiRes.statusCode == 200) {
+        final gistJson = jsonDecode(apiRes.body) as Map<String, dynamic>;
+        final files    = gistJson['files'] as Map<String, dynamic>?;
+        final rawUrl   = files?['a7config.json']?['raw_url'] as String?;
+        if (rawUrl != null) {
+          // Step 2: Fetch config from commit-pinned URL
+          final res = await http
+              .get(Uri.parse(rawUrl))
+              .timeout(const Duration(seconds: 6));
+          if (res.statusCode == 200) {
+            _d      = jsonDecode(res.body) as Map<String, dynamic>;
+            _loaded = true;
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // Fallback: direct raw URL with hard no-cache headers
+    try {
       final res = await http.get(
-        // cache-bust so GitHub serves fresh content every time
-        Uri.parse('$_kGistUrl?t=${DateTime.now().millisecondsSinceEpoch}'),
-        headers: {'Cache-Control': 'no-cache'},
-      ).timeout(const Duration(seconds: 7));
+        Uri.parse('$_kGistUrl?cb=${DateTime.now().millisecondsSinceEpoch}'),
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma':        'no-cache',
+          'Expires':       '0',
+        },
+      ).timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
-        _d = jsonDecode(res.body) as Map<String, dynamic>;
+        _d      = jsonDecode(res.body) as Map<String, dynamic>;
         _loaded = true;
       }
     } catch (_) {
@@ -471,6 +508,7 @@ class _BrowserManagerScreenState extends State<BrowserManagerScreen> {
   void initState() {
     super.initState();
     _addTab();
+    // Re-fetch gist on slow networks and rebuild home screen with fresh data
     if (!RemoteConfig.isLoaded) {
       RemoteConfig.fetch().then((_) {
         if (mounted) setState(() {});
@@ -570,7 +608,6 @@ class _BrowserManagerScreenState extends State<BrowserManagerScreen> {
               ),
             ),
           ),
-          const _FlyingBird(),
         ],
       ),
     );
@@ -1103,21 +1140,33 @@ class _BrowserManagerScreenState extends State<BrowserManagerScreen> {
     return InAppWebView(
       initialUrlRequest: URLRequest(url: WebUri(tab.url)),
       initialSettings: InAppWebViewSettings(
-        javaScriptEnabled: true,
-        domStorageEnabled: true,
-        useShouldOverrideUrlLoading: true,
-        mediaPlaybackRequiresUserGesture: false,
-        allowsInlineMediaPlayback: true,
-        supportZoom: true,
-        useWideViewPort: true,
-        loadWithOverviewMode: true,
+        // ── Core ──────────────────────────────────────────────────────────────
+        javaScriptEnabled:                    true,
+        domStorageEnabled:                    true,
+        databaseEnabled:                      true,
+        useShouldOverrideUrlLoading:          true,
         javaScriptCanOpenWindowsAutomatically: true,
         mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+
+        // ── Performance ───────────────────────────────────────────────────────
+        hardwareAcceleration:                 true,   // GPU rendering
+        renderPriority: WebViewRenderPriority.HIGH,   // high thread priority
+        cacheMode:      CacheMode.LOAD_DEFAULT,       // use cache = faster loads
+        safeBrowsingEnabled:                  false,  // removes background checks
+        disableDefaultErrorPage:              true,
+
+        // ── Viewport / media ──────────────────────────────────────────────────
+        supportZoom:                          true,
+        useWideViewPort:                      true,
+        loadWithOverviewMode:                 true,
+        mediaPlaybackRequiresUserGesture:     false,
+        allowsInlineMediaPlayback:            true,
+
+        // ── Scroll feel ───────────────────────────────────────────────────────
+        overScrollMode: OverScrollMode.OVER_SCROLL_IF_CONTENT_SCROLLS,
       ),
-      shouldOverrideUrlLoading: (ctrl, action) async {
-        // Always allow all navigations within the webview
-        return NavigationActionPolicy.ALLOW;
-      },
+      shouldOverrideUrlLoading: (ctrl, action) async =>
+          NavigationActionPolicy.ALLOW,
       onWebViewCreated: (ctrl) {
         tab.webViewController = ctrl;
         ctrl.addJavaScriptHandler(
@@ -1132,8 +1181,8 @@ class _BrowserManagerScreenState extends State<BrowserManagerScreen> {
       },
       onLoadStart: (ctrl, url) {
         setState(() {
-          tab.url   = url.toString();
-          tab.title = 'Loading…';
+          tab.url        = url.toString();
+          tab.title      = 'Loading…';
           tab.noInternet = false;
           _addressCtrl.text = tab.url;
         });
@@ -1149,7 +1198,6 @@ class _BrowserManagerScreenState extends State<BrowserManagerScreen> {
         await ctrl.evaluateJavascript(source: _js);
       },
       onLoadError: (ctrl, url, code, message) {
-        // code -2 = net::ERR_INTERNET_DISCONNECTED, -6 = ERR_CONNECTION_REFUSED, etc.
         final isNetworkError = code == -2 || code == -6 || code == -7 ||
             message.toLowerCase().contains('net::err') ||
             message.toLowerCase().contains('failed to connect') ||
@@ -1751,371 +1799,3 @@ class _MenuItem extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  FLYING BLUE BIRD OVERLAY
-//  — Natural blue kingfisher/blue-jay style bird
-//  — Undulating flight path (sine wave bobbing), random Y lanes, random pauses
-//  — Wing flap cycle: fast flap → brief glide → fast flap (like real birds)
-// ═══════════════════════════════════════════════════════════════════════════════
-class _FlyingBird extends StatefulWidget {
-  const _FlyingBird();
-  @override
-  State<_FlyingBird> createState() => _FlyingBirdState();
-}
-
-class _FlyingBirdState extends State<_FlyingBird> with TickerProviderStateMixin {
-  // Master clock drives everything — bird position derived from elapsed time
-  late AnimationController _clock;
-
-  // Wing flap: drives the wing angle via a repeating sine-like curve
-  late AnimationController _flapClock;
-
-  // Current flight parameters
-  double _dir      = 1.0;   // 1 = L→R, -1 = R→L
-  double _baseY    = 140.0; // vertical centre of this pass
-  double _waveMag  = 18.0;  // vertical undulation magnitude (px)
-  double _waveFreq = 3.5;   // how many full waves per screen crossing
-
-  bool   _visible  = false;
-
-  // Flap cycle state
-  // Birds flap rapidly then briefly hold a glide — we model with two phases
-  bool   _gliding  = false;
-  late AnimationController _glideTimer;
-
-  double _screenW = 400.0;
-
-  @override
-  void initState() {
-    super.initState();
-
-    // Master flight clock: one full crossing
-    _clock = AnimationController(vsync: this, duration: const Duration(seconds: 8));
-    _clock.addStatusListener((s) {
-      if (s == AnimationStatus.completed) _schedulNextFlight();
-    });
-
-    // Flap oscillator
-    _flapClock = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 210))
-      ..repeat(reverse: true);
-
-    // Glide timer — every ~600 ms switch to glide for ~300 ms
-    _glideTimer = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600));
-    _glideTimer.addStatusListener((s) {
-      if (s == AnimationStatus.completed) {
-        if (!mounted) return;
-        setState(() => _gliding = true);
-        Future.delayed(const Duration(milliseconds: 280), () {
-          if (!mounted) return;
-          setState(() => _gliding = false);
-          _glideTimer.reset();
-          _glideTimer.forward();
-        });
-      }
-    });
-
-    // First flight after short delay
-    Future.delayed(const Duration(seconds: 2), _launchFlight);
-  }
-
-  void _launchFlight() {
-    if (!mounted) return;
-    final seed = DateTime.now().microsecondsSinceEpoch;
-    _dir   = _dir == 1.0 ? -1.0 : 1.0;
-    _baseY = 80.0 + (seed % 260).toDouble();    // random Y band
-    _waveMag  = 10.0 + (seed % 20).toDouble();  // subtle to moderate bob
-    _waveFreq = 2.5 + ((seed ~/ 13) % 30) / 10; // 2.5–5.5 waves
-
-    final speedMs = 6500 + (seed % 3000); // 6.5–9.5 s crossing
-    _clock.duration = Duration(milliseconds: speedMs);
-    _clock.reset();
-
-    _glideTimer.reset();
-    _glideTimer.forward();
-
-    setState(() => _visible = true);
-    _clock.forward();
-  }
-
-  void _schedulNextFlight() {
-    _glideTimer.stop();
-    setState(() => _visible = false);
-    // Random pause 8–20 s before next appearance
-    final pauseMs = 8000 + (DateTime.now().microsecondsSinceEpoch % 12000);
-    Future.delayed(Duration(milliseconds: pauseMs), _launchFlight);
-  }
-
-  @override
-  void dispose() {
-    _clock.dispose();
-    _flapClock.dispose();
-    _glideTimer.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    _screenW = MediaQuery.of(context).size.width;
-    if (!_visible) return const SizedBox.shrink();
-
-    return AnimatedBuilder(
-      animation: Listenable.merge([_clock, _flapClock]),
-      builder: (_, __) {
-        final t = _clock.value; // 0→1
-
-        // X: left edge to right edge (or reverse)
-        final double x = _dir == 1.0
-            ? -48 + t * (_screenW + 96)
-            : (_screenW + 48) - t * (_screenW + 96);
-
-        // Y: base + sine wave for natural up/down bobbing
-        final double y = _baseY +
-            math.sin(t * _waveFreq * 2 * math.pi) * _waveMag;
-
-        // Wing angle: gliding = held open, flapping = oscillating
-        final double rawFlap = _flapClock.value * 2 - 1; // -1..1
-        final double wingAngle = _gliding ? 0.08 : rawFlap * 0.72;
-
-        // Slight body tilt: nose up on upstroke, nose down on downstroke
-        final double bodyTilt = _gliding ? 0.0 : rawFlap * 0.10;
-
-        return Positioned(
-          left: x,
-          top:  y,
-          child: IgnorePointer(
-            child: Transform(
-              alignment: Alignment.center,
-              transform: Matrix4.identity()
-                ..scale(_dir, 1.0, 1.0)   // flip for direction
-                ..rotateZ(bodyTilt),       // natural pitch tilt
-              child: CustomPaint(
-                size: const Size(44, 28),
-                painter: _BlueBirdPainter(wingAngle: wingAngle),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  BLUE BIRD PAINTER  — kingfisher / blue jay colour palette
-//  Viewed from the side, flying right. Horizontally flipped in widget for L←
-// ─────────────────────────────────────────────────────────────────────────────
-class _BlueBirdPainter extends CustomPainter {
-  final double wingAngle; // negative = wings up, positive = wings down
-
-  const _BlueBirdPainter({required this.wingAngle});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-
-    // ── Colour palette ──────────────────────────────────────────────────────
-    // Royal/cobalt blue body
-    final bodyShader = RadialGradient(
-      center: const Alignment(-0.3, -0.4),
-      radius: 0.9,
-      colors: const [Color(0xFF5BBCFF), Color(0xFF1E7AE0), Color(0xFF0D47A1)],
-    ).createShader(Rect.fromLTWH(0, 0, w, h));
-
-    // Bright sky-blue wing primary feathers
-    final wingShader = LinearGradient(
-      begin: Alignment.topCenter, end: Alignment.bottomRight,
-      colors: const [Color(0xFF64CAFF), Color(0xFF1565C0)],
-    ).createShader(Rect.fromLTWH(0, 0, w, h));
-
-    // Darker cobalt wing coverts
-    final covertShader = LinearGradient(
-      begin: Alignment.topLeft, end: Alignment.bottomRight,
-      colors: const [Color(0xFF2196F3), Color(0xFF0D47A1)],
-    ).createShader(Rect.fromLTWH(0, 0, w, h));
-
-    // Wing edge highlight — electric blue
-    final edgePaint = Paint()
-      ..color = const Color(0xFF90D8FF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.7;
-
-    final bodyPaint   = Paint()..shader = bodyShader;
-    final wingPaint   = Paint()..shader = wingShader;
-    final covertPaint = Paint()..shader = covertShader;
-
-    // White belly
-    final bellyPaint = Paint()
-      ..color = const Color(0xFFE8F4FF)
-      ..style = PaintingStyle.fill;
-
-    // Black mask stripe
-    final maskPaint = Paint()
-      ..color = const Color(0xFF0A1628)
-      ..style = PaintingStyle.fill;
-
-    // Orange-yellow beak
-    final beakPaint = Paint()
-      ..color = const Color(0xFFE8901A)
-      ..style = PaintingStyle.fill;
-
-    // ── Centre reference ────────────────────────────────────────────────────
-    final cx = w * 0.44;
-    final cy = h * 0.50;
-
-    canvas.save();
-    canvas.translate(cx, cy);
-
-    // ── WINGS (drawn behind body) ──────────────────────────────────────────
-    // Wings hinge at body centre and rotate by wingAngle.
-    // Upper wing = one piece; leading edge sweeps forward/up on upstroke.
-
-    canvas.save();
-    canvas.rotate(wingAngle); // positive = down stroke
-
-    // Primary feathers (long, thin, fanned)
-    final primaryPath = Path()
-      ..moveTo(0, 0)
-      ..cubicTo(-w * 0.08, -h * 0.10,  -w * 0.35, -h * 0.55, -w * 0.22, -h * 0.72)
-      ..cubicTo(-w * 0.15, -h * 0.80, -w * 0.05, -h * 0.65, 0, -h * 0.50)
-      ..cubicTo(w * 0.05, -h * 0.65,  w * 0.15, -h * 0.80,  w * 0.22, -h * 0.72)
-      ..cubicTo(w * 0.35, -h * 0.55,  w * 0.08, -h * 0.10,  0, 0);
-    // For a side-view bird we just draw one wing visible above body
-    final sideWingPath = Path()
-      ..moveTo(0, h * 0.05)
-      ..cubicTo(-w * 0.06, -h * 0.18, -w * 0.28, -h * 0.60, -w * 0.12, -h * 0.65)
-      ..cubicTo(-w * 0.04, -h * 0.68,  w * 0.08, -h * 0.52,  w * 0.10, -h * 0.38)
-      ..cubicTo(w * 0.12, -h * 0.22,   w * 0.06, -h * 0.04,  0, h * 0.05);
-    canvas.drawPath(sideWingPath, wingPaint);
-    canvas.drawPath(sideWingPath, edgePaint);
-
-    // Wing coverts (shorter feathers over the primary base)
-    final covertPath = Path()
-      ..moveTo(0, h * 0.05)
-      ..cubicTo(-w * 0.04, -h * 0.08, -w * 0.14, -h * 0.28, -w * 0.06, -h * 0.32)
-      ..cubicTo(-w * 0.02, -h * 0.34,  w * 0.05, -h * 0.22,  w * 0.06, -h * 0.14)
-      ..cubicTo(w * 0.07, -h * 0.08,   w * 0.03, -h * 0.01,  0, h * 0.05);
-    canvas.drawPath(covertPath, covertPaint);
-
-    canvas.restore(); // end wing rotation
-
-    // ── BODY ────────────────────────────────────────────────────────────────
-    // Egg-shaped, slightly elongated, tilted forward
-    final bodyPath = Path()
-      ..moveTo(w * 0.14, -h * 0.06)
-      ..cubicTo(w * 0.18, h * 0.14, w * 0.10, h * 0.38, 0, h * 0.42)
-      ..cubicTo(-w * 0.10, h * 0.38, -w * 0.16, h * 0.14, -w * 0.12, -h * 0.06)
-      ..cubicTo(-w * 0.08, -h * 0.20,  w * 0.08, -h * 0.20,  w * 0.14, -h * 0.06)
-      ..close();
-    canvas.drawPath(bodyPath, bodyPaint);
-
-    // Belly patch — white/cream on breast
-    final bellyPath = Path()
-      ..moveTo(w * 0.06, h * 0.10)
-      ..cubicTo(w * 0.10, h * 0.26, w * 0.05, h * 0.38, 0, h * 0.40)
-      ..cubicTo(-w * 0.05, h * 0.38, -w * 0.08, h * 0.26, -w * 0.04, h * 0.10)
-      ..cubicTo(-w * 0.01, h * 0.02,  w * 0.04, h * 0.02,  w * 0.06, h * 0.10)
-      ..close();
-    canvas.drawPath(bellyPath, bellyPaint);
-
-    // ── TAIL ────────────────────────────────────────────────────────────────
-    // Forked / fan tail
-    final tailPaint = Paint()
-      ..shader = LinearGradient(
-        colors: const [Color(0xFF1565C0), Color(0xFF0D3A8A)],
-        begin: Alignment.topCenter, end: Alignment.bottomCenter,
-      ).createShader(Rect.fromLTWH(-w * 0.12, h * 0.35, w * 0.24, h * 0.40));
-    final tailPath = Path()
-      ..moveTo(-w * 0.08, h * 0.38)
-      ..cubicTo(-w * 0.16, h * 0.55, -w * 0.20, h * 0.70, -w * 0.14, h * 0.76)
-      ..lineTo(0, h * 0.60)
-      ..lineTo(w * 0.14, h * 0.76)
-      ..cubicTo(w * 0.20, h * 0.70, w * 0.16, h * 0.55, w * 0.08, h * 0.38)
-      ..close();
-    canvas.drawPath(tailPath, tailPaint);
-    canvas.drawPath(tailPath, edgePaint);
-
-    // ── HEAD ────────────────────────────────────────────────────────────────
-    final headPaint = Paint()
-      ..shader = RadialGradient(
-        center: const Alignment(-0.2, -0.5),
-        radius: 0.8,
-        colors: const [Color(0xFF42A5F5), Color(0xFF0D47A1)],
-      ).createShader(Rect.fromLTWH(-w * 0.14, -h * 0.50, w * 0.30, h * 0.30));
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(w * 0.02, -h * 0.25),
-          width: w * 0.30, height: h * 0.28),
-      headPaint,
-    );
-
-    // ── MASK / EYE STRIPE ───────────────────────────────────────────────────
-    // Dark stripe through eye (typical of blue jays / kingfishers)
-    final maskPath = Path()
-      ..moveTo(-w * 0.04, -h * 0.20)
-      ..cubicTo(-w * 0.02, -h * 0.26,  w * 0.14, -h * 0.26,  w * 0.16, -h * 0.20)
-      ..cubicTo(w * 0.16, -h * 0.16,   w * 0.02, -h * 0.16, -w * 0.04, -h * 0.20)
-      ..close();
-    canvas.drawPath(maskPath, maskPaint);
-
-    // ── EYE ─────────────────────────────────────────────────────────────────
-    canvas.drawCircle(Offset(w * 0.07, -h * 0.22), w * 0.045,
-        Paint()..color = Colors.white);
-    canvas.drawCircle(Offset(w * 0.075, -h * 0.225), w * 0.028,
-        Paint()..color = const Color(0xFF080808));
-    // Eye highlight
-    canvas.drawCircle(Offset(w * 0.085, -h * 0.235), w * 0.010,
-        Paint()..color = Colors.white.withOpacity(0.85));
-
-    // ── BEAK ────────────────────────────────────────────────────────────────
-    // Long, slightly curved — kingfisher style
-    final beakPath = Path()
-      ..moveTo(w * 0.14, -h * 0.24)
-      ..cubicTo(w * 0.26, -h * 0.26, w * 0.38, -h * 0.21, w * 0.40, -h * 0.18)
-      ..cubicTo(w * 0.38, -h * 0.16, w * 0.26, -h * 0.18, w * 0.14, -h * 0.19)
-      ..close();
-    canvas.drawPath(beakPath, beakPaint);
-    // Beak ridge line
-    canvas.drawLine(
-      Offset(w * 0.14, -h * 0.215),
-      Offset(w * 0.39, -h * 0.19),
-      Paint()..color = const Color(0xFFB8690A)..strokeWidth = 0.6,
-    );
-
-    // ── CREST (blue jay style crown tuft) ───────────────────────────────────
-    final crestPaint = Paint()
-      ..color = const Color(0xFF0D47A1)
-      ..style = PaintingStyle.fill;
-    final crestPath = Path()
-      ..moveTo(-w * 0.02, -h * 0.35)
-      ..cubicTo(-w * 0.04, -h * 0.52, w * 0.00, -h * 0.60, w * 0.03, -h * 0.55)
-      ..cubicTo(w * 0.05, -h * 0.52, w * 0.06, -h * 0.40, w * 0.04, -h * 0.35)
-      ..close();
-    canvas.drawPath(crestPath, crestPaint);
-    // Second crest feather
-    final crest2 = Path()
-      ..moveTo(-w * 0.04, -h * 0.33)
-      ..cubicTo(-w * 0.08, -h * 0.50, -w * 0.04, -h * 0.56, -w * 0.01, -h * 0.52)
-      ..cubicTo(w * 0.02, -h * 0.48, w * 0.01, -h * 0.38, -w * 0.01, -h * 0.33)
-      ..close();
-    canvas.drawPath(crest2, Paint()..color = const Color(0xFF1565C0));
-
-    // ── LEG / FEET (small, tucked in flight) ────────────────────────────────
-    final legPaint = Paint()
-      ..color = const Color(0xFFE8901A)
-      ..strokeWidth = 1.2
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    canvas.drawLine(Offset(-w * 0.02, h * 0.38), Offset(-w * 0.04, h * 0.48), legPaint);
-    canvas.drawLine(Offset(w * 0.02, h * 0.38), Offset(w * 0.04, h * 0.48), legPaint);
-    // Tiny toes tucked
-    canvas.drawLine(Offset(-w * 0.04, h * 0.48), Offset(-w * 0.07, h * 0.50), legPaint);
-    canvas.drawLine(Offset(w * 0.04, h * 0.48), Offset(w * 0.07, h * 0.50), legPaint);
-
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _BlueBirdPainter old) => old.wingAngle != wingAngle;
-}
